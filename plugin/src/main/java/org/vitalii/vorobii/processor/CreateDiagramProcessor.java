@@ -49,14 +49,14 @@ public class CreateDiagramProcessor extends AbstractProcessor {
 
 	@Override
 	public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-		System.out.println("Annotation processor found!");
 		var trees = Trees.instance(this.processingEnv);
 		var annotatedElements = roundEnv.getElementsAnnotatedWith(Component.class);
 		if (annotatedElements.isEmpty()) {
+			LOGGER.info("No annotated classes found, skipping processor.");
 			return true;
 		}
 		var classes = getAncestors(annotatedElements, TypeElement.class);
-
+		LOGGER.info("Processing {} classes", classes.size());
 		var contextByClass = new HashMap<ClassName, String>();
 		var classMetadataByClassName = new HashMap<ClassName, ClassMetadata>();
 		var nodeByClass = new HashMap<ClassName, MutableNode>();
@@ -65,11 +65,9 @@ public class CreateDiagramProcessor extends AbstractProcessor {
 		for (var typeElement : classes) {
 			var classMetadata = classMetadataExtractor.getClassMetadata(typeElement);
 			var componentName = typeElement.getAnnotation(Component.class).name();
+			LOGGER.info("Class {} belongs to component {}", classMetadata.className().fullName(), componentName);
 			var contextGraph = graphByComponent.computeIfAbsent(componentName, this::createComponentGraph);
-			var classNode = mutNode(Label.htmlLines(
-					Label.Justification.MIDDLE,
-					classDescriptionSerializer.serializeClassDescription(classMetadata).toArray(String[]::new)
-			)).add(Color.WHITE);
+			var classNode = createClassNode(classMetadata);
 			contextByClass.put(classMetadata.className(), componentName);
 			contextGraph.add(classNode);
 			nodeByClass.put(classMetadata.className(), classNode);
@@ -78,17 +76,32 @@ public class CreateDiagramProcessor extends AbstractProcessor {
 
 		for (var typeElement : classes) {
 			var fullClassName = new ClassName(typeElement.asType().toString());
-			var connectedTypes = new CalledClassesScanner(classMetadataByClassName.get(fullClassName).fields(), trees).scan(typeElement);
-			var source = nodeByClass.get(fullClassName);
+			var classMetadata = classMetadataByClassName.get(fullClassName);
+			var connectedTypes = new CalledClassesScanner(classMetadata.fields(), trees).scan(typeElement);
+			var sourceClassNode = nodeByClass.get(fullClassName);
 			for (var connectedType : connectedTypes) {
 				if (contextByClass.containsKey(connectedType.className())) {
 					LOGGER.info("Adding link between {} and {}", fullClassName, connectedType);
-					source.addLink(source.linkTo(nodeByClass.get(connectedType.className()))
+					sourceClassNode.addLink(sourceClassNode.linkTo(nodeByClass.get(connectedType.className()))
 							.with(LINKS_COLOR)
 							.with(Label.lines(Label.Justification.MIDDLE, connectedType.description())));
 				}
 			}
 		}
+		saveDiagram(graphByComponent);
+		return true;
+	}
+
+	private MutableNode createClassNode(ClassMetadata classMetadata) {
+		return mutNode(Label.htmlLines(Label.Justification.MIDDLE, serializeClassDescription(classMetadata)))
+				.add(Color.WHITE);
+	}
+
+	private String[] serializeClassDescription(ClassMetadata classMetadata) {
+		return classDescriptionSerializer.serializeClassDescription(classMetadata).toArray(String[]::new);
+	}
+
+	private void saveDiagram(HashMap<String, MutableGraph> graphByComponent) {
 		try {
 			var diagramFileObject = generateDiagramFileObject();
 			try (var stream = diagramFileObject.openOutputStream()) {
@@ -102,7 +115,6 @@ public class CreateDiagramProcessor extends AbstractProcessor {
 			System.err.println("Error on generation of diagram!!!!");
 			throw new UncheckedIOException(e);
 		}
-		return true;
 	}
 
 	private FileObject generateDiagramFileObject() throws IOException {
