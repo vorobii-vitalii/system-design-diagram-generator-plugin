@@ -1,26 +1,14 @@
 package org.vitalii.vorobii.processor;
 
-import static guru.nidi.graphviz.model.Factory.graph;
-import static guru.nidi.graphviz.model.Factory.mutGraph;
-import static guru.nidi.graphviz.model.Factory.mutNode;
-import static org.vitalii.vorobii.utils.AncestorUtils.getAncestors;
-
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-
-import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.Processor;
-import javax.annotation.processing.RoundEnvironment;
-import javax.annotation.processing.SupportedAnnotationTypes;
-import javax.annotation.processing.SupportedSourceVersion;
-import javax.lang.model.SourceVersion;
-import javax.lang.model.element.TypeElement;
-import javax.tools.FileObject;
-import javax.tools.StandardLocation;
-
+import com.google.auto.service.AutoService;
+import com.sun.source.util.Trees;
+import guru.nidi.graphviz.attribute.Color;
+import guru.nidi.graphviz.attribute.Label;
+import guru.nidi.graphviz.attribute.Style;
+import guru.nidi.graphviz.engine.Format;
+import guru.nidi.graphviz.engine.Graphviz;
+import guru.nidi.graphviz.model.MutableGraph;
+import guru.nidi.graphviz.model.MutableNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vitalii.vorobii.annotation.Component;
@@ -30,16 +18,18 @@ import org.vitalii.vorobii.service.ClassDescriptionSerializer;
 import org.vitalii.vorobii.service.ClassMetadataExtractor;
 import org.vitalii.vorobii.utils.CalledClassesScanner;
 
-import com.google.auto.service.AutoService;
-import com.sun.source.util.Trees;
+import javax.annotation.processing.*;
+import javax.lang.model.SourceVersion;
+import javax.lang.model.element.TypeElement;
+import javax.tools.FileObject;
+import javax.tools.StandardLocation;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.HashMap;
+import java.util.Set;
 
-import guru.nidi.graphviz.attribute.Color;
-import guru.nidi.graphviz.attribute.Label;
-import guru.nidi.graphviz.attribute.Style;
-import guru.nidi.graphviz.engine.Format;
-import guru.nidi.graphviz.engine.Graphviz;
-import guru.nidi.graphviz.model.MutableGraph;
-import guru.nidi.graphviz.model.MutableNode;
+import static guru.nidi.graphviz.model.Factory.*;
+import static org.vitalii.vorobii.utils.AncestorUtils.getAncestors;
 
 @SupportedAnnotationTypes("org.vitalii.vorobii.annotation.Component")
 @AutoService(Processor.class)
@@ -62,14 +52,15 @@ public class CreateDiagramProcessor extends AbstractProcessor {
 		System.out.println("Annotation processor found!");
 		var trees = Trees.instance(this.processingEnv);
 		var annotatedElements = roundEnv.getElementsAnnotatedWith(Component.class);
-
+		if (annotatedElements.isEmpty()) {
+			return true;
+		}
 		var classes = getAncestors(annotatedElements, TypeElement.class);
 
-		Map<ClassName, String> contextByClass = new HashMap<>();
-		Map<ClassName, ClassMetadata> classMetadataByClassName = new HashMap<>();
-
-		Map<ClassName, MutableNode> nodeByClass = new HashMap<>();
-		Map<String, MutableGraph> graphByComponent = new HashMap<>();
+		var contextByClass = new HashMap<ClassName, String>();
+		var classMetadataByClassName = new HashMap<ClassName, ClassMetadata>();
+		var nodeByClass = new HashMap<ClassName, MutableNode>();
+		var graphByComponent = new HashMap<String, MutableGraph>();
 
 		for (var typeElement : classes) {
 			var classMetadata = classMetadataExtractor.getClassMetadata(typeElement);
