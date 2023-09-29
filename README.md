@@ -1,0 +1,1 @@
+## Java compiler plugin that generates system design diagram
