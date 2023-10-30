@@ -10,7 +10,7 @@ import org.vitalii.vorobii.dto.Parameter;
 
 public class ClassDescriptionSerializer {
 
-	private String serializeParameters(List<Parameter> parameters) {
+	public String serializeParameters(List<Parameter> parameters) {
 		return parameters.stream()
 				.map(e -> e.parameterType().fullName() + " " + e.parameterName())
 				.collect(Collectors.joining(", ", "(", ")"));

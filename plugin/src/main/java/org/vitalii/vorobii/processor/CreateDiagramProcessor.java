@@ -41,7 +41,7 @@ import guru.nidi.graphviz.engine.Graphviz;
 import guru.nidi.graphviz.model.MutableGraph;
 import guru.nidi.graphviz.model.MutableNode;
 
-@SupportedAnnotationTypes("org.vitalii.vorobii.annotation.Component")
+//@SupportedAnnotationTypes("org.vitalii.vorobii.annotation.Component")
 @AutoService(Processor.class)
 @SupportedSourceVersion(SourceVersion.RELEASE_19)
 public class CreateDiagramProcessor extends AbstractProcessor {

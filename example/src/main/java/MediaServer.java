@@ -1,6 +1,6 @@
 import org.vitalii.vorobii.annotation.Component;
 
-@Component(name = "Media server")
+@Component(name = "Media server", elementDescription = "Class, responsible for creation of media conferences")
 public class MediaServer {
 
 	public void createConference(String conferenceId) {

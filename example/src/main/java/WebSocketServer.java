@@ -1,6 +1,6 @@
 import org.vitalii.vorobii.annotation.Component;
 
-@Component(name = "Websocket server")
+@Component(name = "Websocket server", elementDescription = "Class is responsible for processing of incoming WebSocket requests")
 public class WebSocketServer {
 	private final MediaServer mediaServer;
 	private final RegistrationServer registrationServer;
@@ -20,6 +20,8 @@ public class WebSocketServer {
 		dialogsServer.createDialog();
 		mediaServer.createConference(conferenceId);
 	}
+
+	// generate puml instead
 
 	public void connectToConference(String sipURI, String conferenceId) {
 		dialogsServer.createDialog();
