@@ -1,4 +1,6 @@
 import org.vitalii.vorobii.annotation.Component;
+import org.vitalii.vorobii.annotation.ComponentAction;
+import org.vitalii.vorobii.annotation.GenerateSequence;
 
 @Component(name = "Websocket server", elementDescription = "Class is responsible for processing of incoming WebSocket requests")
 public class WebSocketServer {
@@ -12,10 +14,12 @@ public class WebSocketServer {
 		this.dialogsServer = dialogsServer;
 	}
 
+	@ComponentAction(requestDescription = "Connect to registration server", responseDescription = "ID")
 	public void connect(String sipURI) {
 		registrationServer.registerNewClient(sipURI);
 	}
 
+	@GenerateSequence(sequenceName = "create_new_conferece", sequenceDescription = "Create new conference")
 	public void createNewConference(String conferenceId) {
 		dialogsServer.createDialog();
 		mediaServer.createConference(conferenceId);

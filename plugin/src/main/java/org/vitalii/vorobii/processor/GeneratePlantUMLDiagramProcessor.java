@@ -1,28 +1,13 @@
 package org.vitalii.vorobii.processor;
 
-import static org.vitalii.vorobii.utils.AncestorUtils.getAncestors;
-
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
-
-import javax.annotation.processing.AbstractProcessor;
-import javax.annotation.processing.Processor;
-import javax.annotation.processing.RoundEnvironment;
-import javax.annotation.processing.SupportedAnnotationTypes;
-import javax.annotation.processing.SupportedSourceVersion;
-import javax.lang.model.SourceVersion;
-import javax.lang.model.element.TypeElement;
-import javax.tools.FileObject;
-import javax.tools.StandardLocation;
-
+import com.google.auto.service.AutoService;
+import com.sun.source.util.Trees;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.vitalii.vorobii.annotation.Component;
+import org.vitalii.vorobii.annotation.ComponentAction;
+import org.vitalii.vorobii.annotation.GenerateSequence;
+import org.vitalii.vorobii.dto.CallStatement;
 import org.vitalii.vorobii.dto.ClassMetadata;
 import org.vitalii.vorobii.dto.ClassMethod;
 import org.vitalii.vorobii.dto.ClassName;
@@ -30,50 +15,192 @@ import org.vitalii.vorobii.service.ClassDescriptionSerializer;
 import org.vitalii.vorobii.service.ClassMetadataExtractor;
 import org.vitalii.vorobii.utils.CalledClassesScanner;
 
-import com.google.auto.service.AutoService;
-import com.sun.source.util.Trees;
+import javax.annotation.processing.*;
+import javax.lang.model.SourceVersion;
+import javax.lang.model.element.TypeElement;
+import javax.tools.FileObject;
+import javax.tools.StandardLocation;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+import java.util.stream.Collectors;
 
-import guru.nidi.graphviz.model.MutableGraph;
+import static org.vitalii.vorobii.utils.AncestorUtils.getAncestors;
 
 @SupportedAnnotationTypes("org.vitalii.vorobii.annotation.Component")
 @AutoService(Processor.class)
 @SupportedSourceVersion(SourceVersion.RELEASE_19)
 public class GeneratePlantUMLDiagramProcessor extends AbstractProcessor {
+	public static final String BACKWARD = "-->";
 	private static final String SMART_UML = "@startuml\n";
 	private static final String END_UML = "\n@enduml";
 	private static final Logger LOGGER = LoggerFactory.getLogger(GeneratePlantUMLDiagramProcessor.class);
 
 	private static final String MODULE_AND_PKG = "";
+	public static final String FORWARD = " -> ";
+	public static final String COMMENT_DELIMITER = " : ";
 
 	private final ClassMetadataExtractor classMetadataExtractor = new ClassMetadataExtractor();
 	private final ClassDescriptionSerializer classDescriptionSerializer = new ClassDescriptionSerializer();
 
 	@Override
 	public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
-		System.out.println("Annotation processor found!");
-		var trees = Trees.instance(this.processingEnv);
+		LOGGER.info("Annotation processor to generate diagrams started!");
 		var annotatedElements = roundEnv.getElementsAnnotatedWith(Component.class);
-
+		if (annotatedElements.isEmpty()) {
+			return false;
+		}
 		var classes = getAncestors(annotatedElements, TypeElement.class);
+		var classMetadataByClassName = new HashMap<ClassName, ClassMetadata>();
+		generateComponentDiagram(classes, classMetadataByClassName);
 
-		Map<ClassName, String> contextByClass = new HashMap<>();
-		Map<ClassName, ClassMetadata> classMetadataByClassName = new HashMap<>();
+		for (var classMetadata : classMetadataByClassName.values()) {
+			for (var method : classMetadata.methods().values()) {
+				var generateSequence = method.element().getAnnotation(GenerateSequence.class);
+				if (generateSequence != null) {
+					var sequenceName = generateSequence.sequenceName();
+					var builder = new StringBuilder(SMART_UML);
+					if (!generateSequence.sequenceDescription().isEmpty()) {
+						builder.append("mainframe ").append(generateSequence.sequenceDescription()).append('\n');
+					}
+					Set<String> visitedMethods = new HashSet<>();
+					solve(visitedMethods, classMetadataByClassName, builder, classMetadata.className(), method);
 
-		Map<String, MutableGraph> graphByComponent = new HashMap<>();
+					// generate
+					builder.append(END_UML);
+					try {
+						var diagramFileObject = generateSequenceDiagramFile(sequenceName);
+						try (var stream = diagramFileObject.openOutputStream()) {
+							stream.write(builder.toString().getBytes(StandardCharsets.UTF_8));
+						}
+					}
+					catch (IOException e) {
+						System.err.println("Error on generation of diagram!!!!");
+						throw new UncheckedIOException(e);
+					}
+				}
+			}
+		}
+		LOGGER.info("Annotation processor to generate diagrams finished!");
+		return true;
+	}
 
-		StringBuilder builder = new StringBuilder(SMART_UML);
+	private void solve(
+			Set<String> visitedMethods,
+			Map<ClassName, ClassMetadata> classMetadataByClassName,
+			StringBuilder builder,
+			ClassName className,
+			ClassMethod method
+	) {
+		String methodId = className.fullName() + "#" + method.name();
+		if (visitedMethods.contains(methodId)) {
+			return;
+		}
+		visitedMethods.add(methodId);
+		var refClassLabel = className.fullName();
+		for (var callStatement : method.callStatements()) {
+			var calledClass = callStatement.className();
+			var calledClassMetadata = classMetadataByClassName.get(calledClass);
+			if (calledClassMetadata == null) {
+//				Bob -> Alice : hello
+//				Alice -> Bob : ok
+				builder.append(refClassLabel)
+						.append(FORWARD)
+						.append(calledClass.fullName())
+						.append(COMMENT_DELIMITER)
+						.append(callStatement.methodName())
+						.append('\n');
+			}
+			else {
+				var calledMethod = calledClassMetadata.methods().get(callStatement.methodName());
+				var componentAction = calledMethod.element().getAnnotation(ComponentAction.class);
+				builder.append(refClassLabel)
+						.append(FORWARD)
+						.append(calledClass.fullName())
+						.append(COMMENT_DELIMITER)
+						.append(componentAction != null ? componentAction.requestDescription() : callStatement.methodName())
+						.append('\n');
+				solve(visitedMethods, classMetadataByClassName, builder, calledClass, calledMethod);
+				var response =
+						componentAction != null && !componentAction.responseDescription().isEmpty()
+								? componentAction.responseDescription()
+								: calledMethod.returnType().fullName();
+				builder.append(calledClass.fullName())
+						.append(BACKWARD)
+						.append(refClassLabel)
+						.append(COMMENT_DELIMITER)
+						.append(response)
+						.append('\n');
+			}
+		}
+	}
 
-		var elementsByComponentName =
-				classes.stream().collect(Collectors.groupingBy(e -> e.getAnnotation(Component.class).name()));
+	private void generateComponentDiagram(
+			List<TypeElement> classes,
+			Map<ClassName, ClassMetadata> classMetadataByClassName
+	) {
+		var contextByClass = new HashMap<ClassName, String>();
+		var builder = new StringBuilder(SMART_UML);
+		addClassesToDiagram(classes, contextByClass, classMetadataByClassName, builder);
+		addRelationsToDiagram(classes, contextByClass, classMetadataByClassName, builder);
+		builder.append(END_UML);
+		try {
+			var diagramFileObject = generateComponentDiagramFile();
+			try (var stream = diagramFileObject.openOutputStream()) {
+				stream.write(builder.toString().getBytes(StandardCharsets.UTF_8));
+			}
+		}
+		catch (IOException e) {
+			System.err.println("Error on generation of diagram!!!!");
+			throw new UncheckedIOException(e);
+		}
+	}
 
-		for (var entry : elementsByComponentName.entrySet()) {
+	private void addRelationsToDiagram(
+			List<TypeElement> classes,
+			Map<ClassName, String> contextByClass,
+			Map<ClassName, ClassMetadata> classMetadataByClassName,
+			StringBuilder builder
+	) {
+		var trees = Trees.instance(this.processingEnv);
+		for (var typeElement : classes) {
+			var fullClassName = new ClassName(typeElement.asType().toString());
+			var classMetadata = classMetadataByClassName.get(fullClassName);
+			var connectedTypes =
+					new CalledClassesScanner(classMetadata.fields(), trees).scan(typeElement);
+			for (var connectedType : connectedTypes) {
+				if (contextByClass.containsKey(connectedType.className())) {
+					LOGGER.info("Adding link between {} and {}", fullClassName, connectedType);
+					builder.append('\n')
+							.append(classMetadata.className().fullName())
+							.append(" --> ")
+							.append(connectedType.className().fullName())
+							.append(" : ")
+							.append(connectedType.description());
+				}
+			}
+		}
+	}
+
+	private void addClassesToDiagram(
+			List<TypeElement> classes,
+			Map<ClassName, String> contextByClass,
+			Map<ClassName, ClassMetadata> classMetadataByClassName,
+			StringBuilder builder
+	) {
+		var trees = Trees.instance(this.processingEnv);
+		for (var entry : classes.stream()
+				.collect(Collectors.groupingBy(e -> e.getAnnotation(Component.class).name()))
+				.entrySet()
+		) {
 			var componentName = entry.getKey();
 			builder.append("\n package \"")
 					.append(componentName)
 					.append("\" {\n");
 			// Serialize the classes inside
 			for (var typeElement : entry.getValue()) {
-				var classMetadata = classMetadataExtractor.getClassMetadata(typeElement);
+				var classMetadata = classMetadataExtractor.getClassMetadata(typeElement, trees);
 				var elementDescription = typeElement.getAnnotation(Component.class).elementDescription();
 				var className = classMetadata.className().fullName();
 				builder.append("class ").append(className).append(" {\n");
@@ -88,7 +215,7 @@ public class GeneratePlantUMLDiagramProcessor extends AbstractProcessor {
 							.append(field.getValue().fullName())
 							.append("\n");
 				}
-				for (ClassMethod method : classMetadata.methods()) {
+				for (ClassMethod method : classMetadata.methods().values()) {
 					builder.append(method.returnType().fullName())
 							.append(' ')
 							.append(method.name())
@@ -104,40 +231,16 @@ public class GeneratePlantUMLDiagramProcessor extends AbstractProcessor {
 			}
 			builder.append('}');
 		}
-
-		for (var typeElement : classes) {
-			var fullClassName = new ClassName(typeElement.asType().toString());
-			var classMetadata = classMetadataByClassName.get(fullClassName);
-			var connectedTypes = new CalledClassesScanner(classMetadata.fields(), trees).scan(typeElement);
-			for (var connectedType : connectedTypes) {
-				if (contextByClass.containsKey(connectedType.className())) {
-					LOGGER.info("Adding link between {} and {}", fullClassName, connectedType);
-					builder.append('\n')
-							.append(classMetadata.className().fullName())
-							.append(" --> ")
-							.append(connectedType.className().fullName())
-							.append(" : ")
-							.append(connectedType.description());
-				}
-			}
-		}
-		builder.append(END_UML);
-		try {
-			var diagramFileObject = generateDiagramFile();
-			try (var stream = diagramFileObject.openOutputStream()) {
-				stream.write(builder.toString().getBytes(StandardCharsets.UTF_8));
-			}
-		}
-		catch (IOException e) {
-			System.err.println("Error on generation of diagram!!!!");
-			throw new UncheckedIOException(e);
-		}
-		return true;
 	}
 
-	private FileObject generateDiagramFile() throws IOException {
+	private FileObject generateSequenceDiagramFile(String sequenceName) throws IOException {
 		return processingEnv.getFiler()
-				.createResource(StandardLocation.CLASS_OUTPUT, MODULE_AND_PKG, generateDiagramFileName());
+				.createResource(StandardLocation.SOURCE_OUTPUT, MODULE_AND_PKG, sequenceName + ".puml");
+	}
+
+	private FileObject generateComponentDiagramFile() throws IOException {
+		return processingEnv.getFiler()
+				.createResource(StandardLocation.SOURCE_OUTPUT, MODULE_AND_PKG, generateDiagramFileName());
 	}
 
 	private static String generateDiagramFileName() {

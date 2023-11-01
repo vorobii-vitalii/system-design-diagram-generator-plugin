@@ -26,6 +26,7 @@ public class ClassDescriptionSerializer {
 						.map(e -> "<i>" + e.getValue().fullName() + " " + e.getKey() + "</i>"),
 				Stream.of("<b>Methods</b>"),
 				classMetadata.methods()
+						.values()
 						.stream()
 						.map(method -> method.returnType().fullName() + " " + serializeParameters(method.methodParameters())),
 				Stream.of("<b>Constructors</b>"),

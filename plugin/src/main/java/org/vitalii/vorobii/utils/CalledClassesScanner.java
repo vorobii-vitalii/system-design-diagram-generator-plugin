@@ -36,12 +36,19 @@ public class CalledClassesScanner extends ElementScanner14<Set<ClassCalled>, Voi
 	public Set<ClassCalled> visitExecutable(ExecutableElement e, Void unused) {
 		var tree = trees.getTree(e);
 		if (tree != null) {
-			var expressionStatements = getAncestors(tree.getBody().getStatements(), ExpressionStatementTree.class);
-			var methodInvocations = getAncestors(expressionStatements.stream()
-					.map(ExpressionStatementTree::getExpression)
-					.toList(), MethodInvocationTree.class);
-			var methodSelectors = methodInvocations.stream().map(MethodInvocationTree::getMethodSelect).toList();
-			var methodSelectTrees = getAncestors(methodSelectors, MemberSelectTree.class);
+			var expressionStatements =
+					getAncestors(tree.getBody().getStatements(), ExpressionStatementTree.class);
+			var methodInvocations =
+					getAncestors(
+							expressionStatements.stream()
+									.map(ExpressionStatementTree::getExpression)
+									.toList(),
+							MethodInvocationTree.class
+					);
+			var methodSelectors =
+					methodInvocations.stream().map(MethodInvocationTree::getMethodSelect).toList();
+			var methodSelectTrees =
+					getAncestors(methodSelectors, MemberSelectTree.class);
 			methodSelectTrees.forEach(memberSelectTree -> {
 				var expression = memberSelectTree.getExpression();
 				LOGGER.info("Expression type = {}", expression.getClass());
@@ -51,19 +58,22 @@ public class CalledClassesScanner extends ElementScanner14<Set<ClassCalled>, Voi
 						DEFAULT_VALUE.add(new ClassCalled(
 								type,
 								"METHOD_CALL",
-								identifierTree.getName().toString() + "#" + memberSelectTree.getIdentifier()));
+								identifierTree.getName().toString() + "#" + memberSelectTree.getIdentifier()
+						));
 					}
-				} else if (expression instanceof MemberSelectTree selectTree) {
+				}
+				// Field access
+				else if (expression instanceof MemberSelectTree selectTree) {
 					var type = typeByFieldName.get(selectTree.getIdentifier().toString());
 					if (type != null) {
 						LOGGER.info("Selected tree expression = {}", selectTree.getExpression());
 						DEFAULT_VALUE.add(new ClassCalled(
 								type,
 								"METHOD_CALL",
-								selectTree.getIdentifier().toString() + "#" + memberSelectTree.getIdentifier()));
+								selectTree.getIdentifier().toString() + "#" + memberSelectTree.getIdentifier()
+						));
 					}
 				}
-
 			});
 		}
 
