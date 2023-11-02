@@ -16,10 +16,11 @@ public class ClassMetadataExtractor {
 
 	public ClassMetadata getClassMetadata(TypeElement typeElement, Trees trees) {
 		var fieldTypeByFieldName = new FieldTypeScanner().scan(typeElement);
-		var methods = new MethodsScanner(trees, fieldTypeByFieldName).scan(typeElement);
+		var className = new ClassName(typeElement.asType().toString());
+		var methods = new MethodsScanner(trees, fieldTypeByFieldName, className).scan(typeElement);
 		var constructors = new ConstructorsScanner().scan(typeElement);
 		return new ClassMetadata(
-				new ClassName(typeElement.asType().toString()),
+				className,
 				methods.stream().collect(Collectors.toMap(ClassMethod::name, e -> e)),
 				constructors,
 				fieldTypeByFieldName

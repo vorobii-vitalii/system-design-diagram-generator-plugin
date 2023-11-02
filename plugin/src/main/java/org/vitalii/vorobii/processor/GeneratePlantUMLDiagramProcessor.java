@@ -103,8 +103,6 @@ public class GeneratePlantUMLDiagramProcessor extends AbstractProcessor {
 			var calledClass = callStatement.className();
 			var calledClassMetadata = classMetadataByClassName.get(calledClass);
 			if (calledClassMetadata == null) {
-//				Bob -> Alice : hello
-//				Alice -> Bob : ok
 				builder.append(refClassLabel)
 						.append(FORWARD)
 						.append(calledClass.fullName())
@@ -122,18 +120,21 @@ public class GeneratePlantUMLDiagramProcessor extends AbstractProcessor {
 						.append(componentAction != null ? componentAction.requestDescription() : callStatement.methodName())
 						.append('\n');
 				solve(visitedMethods, classMetadataByClassName, builder, calledClass, calledMethod);
-				var response =
-						componentAction != null && !componentAction.responseDescription().isEmpty()
-								? componentAction.responseDescription()
-								: calledMethod.returnType().fullName();
-				builder.append(calledClass.fullName())
-						.append(BACKWARD)
-						.append(refClassLabel)
-						.append(COMMENT_DELIMITER)
-						.append(response)
-						.append('\n');
+				if (!calledClass.equals(className)) {
+					var response =
+							componentAction != null && !componentAction.responseDescription().isEmpty()
+									? componentAction.responseDescription()
+									: calledMethod.returnType().fullName();
+					builder.append(calledClass.fullName())
+							.append(BACKWARD)
+							.append(refClassLabel)
+							.append(COMMENT_DELIMITER)
+							.append(response)
+							.append('\n');
+				}
 			}
 		}
+		visitedMethods.remove(methodId);
 	}
 
 	private void generateComponentDiagram(

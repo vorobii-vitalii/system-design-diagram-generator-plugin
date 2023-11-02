@@ -23,6 +23,13 @@ public class WebSocketServer {
 	public void createNewConference(String conferenceId) {
 		dialogsServer.createDialog();
 		mediaServer.createConference(conferenceId);
+		for (int i = 0; i < 100; i++) {
+			loopAction();
+		}
+	}
+
+	private void loopAction() {
+		System.out.println("Loop action");
 	}
 
 	// generate puml instead
